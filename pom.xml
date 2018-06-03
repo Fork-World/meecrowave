@@ -49,8 +49,8 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
     <junit.version>4.12</junit.version>
-    <tomcat.version>9.0.7</tomcat.version>
-    <openwebbeans.version>2.0.4</openwebbeans.version>
+    <tomcat.version>9.0.8</tomcat.version>
+    <openwebbeans.version>2.0.5</openwebbeans.version>
     <cxf.version>3.2.4</cxf.version>
     <johnzon.version>1.1.7</johnzon.version>
     <log4j2.version>2.11.0</log4j2.version>
@@ -59,7 +59,7 @@
     <openjpa.version>2.4.2</openjpa.version>
     <jpa-spec.version>1.0-alpha-1</jpa-spec.version>
     <h2.version>1.4.196</h2.version>
-    <dbcp2.version>2.2.0</dbcp2.version>
+    <dbcp2.version>2.3.0</dbcp2.version>
     <commons-cli.version>1.4</commons-cli.version>
     <xbean.version>4.7</xbean.version>
   </properties>
