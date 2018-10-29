@@ -21,12 +21,16 @@
   <parent>
     <artifactId>meecrowave</artifactId>
     <groupId>org.apache.meecrowave</groupId>
-    <version>1.2.2-SNAPSHOT</version>
+    <version>1.2.5-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
 
   <artifactId>meecrowave-core</artifactId>
   <name>Meecrowave :: Core</name>
+
+  <properties>
+    <meecrowave.build.name>${project.groupId}.core</meecrowave.build.name>
+  </properties>
 
   <dependencies>
     <dependency>
@@ -46,21 +50,17 @@
       <optional>true</optional>
     </dependency>
     <dependency>
-      <groupId>org.apache.commons</groupId>
-      <artifactId>commons-text</artifactId>
-      <version>1.1</version>
-    </dependency>
-    <dependency>
       <groupId>org.apache.xbean</groupId>
       <artifactId>xbean-reflect</artifactId>
       <version>${xbean.version}</version>
     </dependency>
-    <dependency>
+    <dependency> <!-- it switches the SPI so don't deliver it if not needed -->
       <groupId>org.apache.openwebbeans</groupId>
       <artifactId>openwebbeans-se</artifactId>
       <version>${openwebbeans.version}</version>
+      <scope>provided</scope>
     </dependency>
-    <dependency>
+    <dependency> <!-- not that if a user adds owb-se this should get excluded -->
       <groupId>org.apache.openwebbeans</groupId>
       <artifactId>openwebbeans-web</artifactId>
       <version>${openwebbeans.version}</version>

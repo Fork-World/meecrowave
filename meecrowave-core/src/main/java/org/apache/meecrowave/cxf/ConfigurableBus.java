@@ -18,6 +18,7 @@
  */
 package org.apache.meecrowave.cxf;
 
+import static java.util.Collections.singletonList;
 import static java.util.Optional.of;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.toList;
@@ -28,7 +29,6 @@ import java.io.Reader;
 import java.io.Writer;
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -162,7 +162,7 @@ public class ConfigurableBus extends ExtensionManagerBus {
     @Produces({MediaType.APPLICATION_JSON, "*/*+json"})
     @Consumes({MediaType.APPLICATION_JSON, "*/*+json"})
     public static class ConfiguredJsonbJaxrsProvider<T> extends JsonbJaxrsProvider<T> {
-        private final JsonProvider provider;
+        private final Jsonb jsonb;
 
         private ConfiguredJsonbJaxrsProvider(final String encoding,
                                              final boolean nulls,
@@ -174,8 +174,7 @@ public class ConfigurableBus extends ExtensionManagerBus {
                                              final JsonProvider provider) {
             // ATTENTION this is only a workaround for MEECROWAVE-49 and shall get removed after Johnzon has a fix for it!
             // We add byte[] to the ignored types.
-            super(Arrays.asList("[B"));
-            this.provider = provider;
+            super(singletonList("[B"));
             ofNullable(encoding).ifPresent(this::setEncoding);
             ofNullable(namingStrategy).ifPresent(this::setPropertyNamingStrategy);
             ofNullable(orderStrategy).ifPresent(this::setPropertyOrderStrategy);
@@ -183,16 +182,15 @@ public class ConfigurableBus extends ExtensionManagerBus {
             setNullValues(nulls);
             setIJson(iJson);
             setPretty(pretty);
-        }
-
-        public Jsonb getProvider() {
-            return delegate.get();
-        }
-
-        protected Jsonb createJsonb() {
-            return JsonbBuilder.newBuilder()
+            this.jsonb = JsonbBuilder.newBuilder()
                     .withProvider(provider)
-                    .withConfig(config).build();
+                    .withConfig(config)
+                    .build();
+        }
+
+        @Override
+        protected Jsonb createJsonb() {
+            return jsonb;
         }
     }
 

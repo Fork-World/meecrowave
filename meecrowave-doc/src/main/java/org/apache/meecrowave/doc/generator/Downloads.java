@@ -27,17 +27,18 @@ import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PrintStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
-import static java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME;
 import static java.util.Arrays.asList;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.toList;
@@ -45,7 +46,12 @@ import static java.util.stream.Collectors.toList;
 // helper to generate the download table content
 public class Downloads {
     private static final SAXParserFactory FACTORY = SAXParserFactory.newInstance();
-    private static final String MVN_BASE = "http://repo.maven.apache.org/maven2/";
+    private static final String MVN_BASE = "https://repo.maven.apache.org/maven2/";
+
+    private static final String DIST_RELEASE = "https://dist.apache.org/repos/dist/release/openwebbeans/meecrowave/";
+    private static final String ARCHIVE_RELEASE = "https://archive.apache.org/dist/openwebbeans/meecrowave/";
+    private static final String MIRROR_RELEASE = "http://www.apache.org/dyn/closer.lua/openwebbeans/meecrowave/";
+
     private static final long MEGA_RATIO = 1024 * 1024;
     private static final long KILO_RATIO = 1024;
 
@@ -59,7 +65,14 @@ public class Downloads {
     }
 
     public static void main(final String[] args) {
+        doMain(System.out);
+    }
+
+    public static void doMain(final PrintStream stream) {
         System.setProperty("java.util.concurrent.ForkJoinPool.common.parallelism", "32");
+
+        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.of("UTC"));
+
         Stream.of(
                 Stream.of("org/apache/meecrowave/meecrowave")
                         .flatMap(Downloads::toVersions)
@@ -68,12 +81,12 @@ public class Downloads {
                 versionStream("meecrowave-core")
                         .map(v -> v.classifiers("", "runner"))
                         .map(v -> v.extensions("jar")))
-                .flatMap(s -> s)
-                .flatMap(Downloads::toDownloadable)
-                .parallel()
-                .map(Downloads::fillDownloadable)
-                .filter(Objects::nonNull)
-                .sorted((o1, o2) -> {
+              .flatMap(s -> s)
+              .flatMap(Downloads::toDownloadable)
+              .parallel()
+              .map(Downloads::fillDownloadable)
+              .filter(Objects::nonNull)
+              .sorted((o1, o2) -> {
                     final int versionComp = o2.version.compareTo(o1.version);
                     if (versionComp != 0) {
                         if (o2.version.startsWith(o1.version) && o2.version.contains("-M")) { // milestone
@@ -91,28 +104,29 @@ public class Downloads {
                         return nameComp;
                     }
 
-                    final long dateComp = LocalDateTime.parse(o2.date, RFC_1123_DATE_TIME).toInstant(ZoneOffset.UTC).toEpochMilli()
-                            - LocalDateTime.parse(o1.date, RFC_1123_DATE_TIME).toInstant(ZoneOffset.UTC).toEpochMilli();
+                    final long dateComp = o2.date.compareTo(o1.date);
                     if (dateComp != 0) {
                         return (int) dateComp;
                     }
 
                     return o1.url.compareTo(o2.url);
                 })
-                .collect(toList())
-                .forEach(d ->
-                        System.out.println("" +
+              .collect(toList())
+              .forEach(d ->
+                        stream.println("" +
                                 "|" + d.name + (d.classifier.isEmpty() ? "" : (" " + d.classifier)).replace("source-release", "Source Release") +
                                 "|" + d.version +
-                                "|" + d.date +
+                                "|" + dateFormatter.format(d.date) +
                                 "|" + d.size +
                                 "|" + d.format +
-                                "| " + d.url + "[icon:download[] " + d.format + "] " + d.sha1 + "[icon:download[] sha1] " + d.md5 + "[icon:download[] md5] " + d.asc + "[icon:download[] asc]"));
+                                "| " + d.url + "[icon:download[] " + d.format + "] " +
+                                (d.sha512 != null?  d.sha512 + "[icon:download[]&nbsp;sha512] " : d.sha1 + "[icon:download[]&nbsp;sha1] ") +
+                                d.asc + "[icon:download[]&nbsp;asc]"));
     }
 
     private static Download fillDownloadable(final Download download) {
         try {
-            final URL url = new URL(download.url);
+            final URL url = new URL(download.mavenCentralUrl);
             final HttpURLConnection connection = HttpURLConnection.class.cast(url.openConnection());
             connection.setConnectTimeout((int) TimeUnit.SECONDS.toMillis(30));
             final int responseCode = connection.getResponseCode();
@@ -123,7 +137,9 @@ public class Downloads {
                 return null;
             }
 
-            download.date = connection.getHeaderField("Last-Modified").replaceAll(" +", " ");
+            long lastMod = connection.getHeaderFieldDate("Last-Modified", 0);
+            download.date = Instant.ofEpochMilli(lastMod);
+
             download.size = toSize(ofNullable(connection.getHeaderField("Content-Length"))
                     .map(Long::parseLong).orElse(0L), ofNullable(connection.getHeaderField("Accept-Ranges")).orElse("bytes"));
 
@@ -158,16 +174,54 @@ public class Downloads {
                 .map(a -> toDownload(artifactId, a.classifier, version.version, a.extension, artifactBase + (a.classifier.isEmpty() ? '.' + a.extension : ('-' + a.classifier + '.' + a.extension))));
     }
 
-    private static Download toDownload(final String artifactId, final String classifier, final String version, final String format, final String url) {
+    private static Download toDownload(final String artifactId, final String classifier, final String version, final String format, String artifactUrl) {
+        String url = DIST_RELEASE + version + "/" + artifactId + "-" + version + "-" + classifier + "." + format;
+        String downloadUrl;
+        String sha512 = null;
+        if (urlExists(url)) {
+            // artifact exists on dist.a.o
+            downloadUrl = MIRROR_RELEASE + version + "/" + artifactId + "-" + version + "-" + classifier + "." + format;
+        }
+        else {
+            url = ARCHIVE_RELEASE + version + "/" + artifactId + "-" + version + "-" + classifier + "." + format;
+            if (urlExists(url)) {
+                // artifact exists on archive.a.o
+                downloadUrl = url;
+            }
+            else {
+                // falling back to Maven URL
+                downloadUrl = artifactUrl;
+                url = artifactUrl;
+            }
+        }
+
+        if (urlExists(url + ".sha512")) {
+            sha512 = url + ".sha512";
+        }
+
         return new Download(
                 WordUtils.capitalize(artifactId.replace('-', ' ')),
                 classifier,
                 version,
                 format,
-                url,
-                url + ".md5",
+                downloadUrl,
                 url + ".sha1",
-                url + ".asc");
+                sha512,
+                url + ".asc",
+                artifactUrl);
+    }
+
+    private static boolean urlExists(String urlString) {
+        try {
+            URL url = new URL(urlString);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("HEAD");
+            conn.setUseCaches(false);
+            return conn.getResponseCode() == HttpURLConnection.HTTP_OK;
+        }
+        catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private static Stream<Version> toVersions(final String baseUrl) {
@@ -220,23 +274,26 @@ public class Downloads {
         private final String classifier;
         private final String version;
         private final String format;
+        private final String mavenCentralUrl;
         private final String url;
-        private final String md5;
         private final String sha1;
+        private final String sha512;
         private final String asc;
-        private String date;
+        private Instant date;
         private String size;
 
         public Download(final String name, final String classifier, final String version,
-                        final String format, final String url, final String md5, final String sha1, final String asc) {
+                        final String format, final String url, final String sha1, final String sha512,
+                        final String asc, String mavenCentralUrl) {
             this.name = name;
             this.classifier = classifier;
             this.version = version;
             this.format = format;
             this.url = url;
-            this.md5 = md5;
             this.sha1 = sha1;
+            this.sha512 = sha512;
             this.asc = asc;
+            this.mavenCentralUrl = mavenCentralUrl;
         }
     }
 

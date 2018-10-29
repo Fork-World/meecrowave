@@ -21,7 +21,7 @@
   <parent>
     <artifactId>meecrowave</artifactId>
     <groupId>org.apache.meecrowave</groupId>
-    <version>1.2.2-SNAPSHOT</version>
+    <version>1.2.5-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
 
@@ -30,6 +30,7 @@
 
   <properties>
     <jolokia.version>2.0.0-M3</jolokia.version>
+    <meecrowave.build.name>${project.groupId}.jolokia</meecrowave.build.name>
   </properties>
 
   <dependencies>
@@ -103,7 +104,7 @@
     <dependency>
       <groupId>commons-io</groupId>
       <artifactId>commons-io</artifactId>
-      <version>2.5</version>
+      <version>2.6</version>
       <scope>test</scope>
     </dependency>
   </dependencies>

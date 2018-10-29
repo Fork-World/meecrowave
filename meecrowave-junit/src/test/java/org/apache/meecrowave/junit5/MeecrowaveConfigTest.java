@@ -32,12 +32,12 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
 @MeecrowaveConfig
-public class MeecrowaveConfigTest {
+class MeecrowaveConfigTest {
     @ConfigurationInject
     private Meecrowave.Builder config;
 
     @Test
-    public void run() throws MalformedURLException {
+    void run() throws MalformedURLException {
         assertEquals("simple", slurp(new URL("http://localhost:" + config.getHttpPort() + "/api/test")));
     }
 

@@ -21,7 +21,7 @@
   <parent>
     <artifactId>meecrowave</artifactId>
     <groupId>org.apache.meecrowave</groupId>
-    <version>1.2.2-SNAPSHOT</version>
+    <version>1.2.5-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
 
@@ -43,13 +43,6 @@
     </dependency>
 
     <dependency>
-      <groupId>org.junit.jupiter</groupId>
-      <artifactId>junit-jupiter-engine</artifactId>
-      <version>${junit5.version}</version>
-      <scope>test</scope>
-    </dependency>
-
-    <dependency>
       <groupId>org.apache.meecrowave</groupId>
       <artifactId>meecrowave-core</artifactId>
       <version>${project.version}</version>
@@ -57,7 +50,9 @@
   </dependencies>
 
   <properties>
-    <junit5.version>5.0.1</junit5.version>
+    <junit5.minor.version>3.0</junit5.minor.version>
+    <junit5.version>5.${junit5.minor.version}</junit5.version>
+    <meecrowave.build.name>${project.groupId}.junit</meecrowave.build.name>
   </properties>
 
   <build>
@@ -72,19 +67,19 @@
         <dependencies>
           <dependency>
             <groupId>org.junit.platform</groupId>
-            <artifactId>junit-platform-surefire-provider</artifactId>
-            <version>1.0.1</version>
+            <artifactId>junit-platform-launcher</artifactId>
+            <version>1.${junit5.minor.version}</version>
           </dependency>
-          <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter-engine</artifactId>
-            <version>${junit5.version}</version>
-          </dependency>
-          <dependency>
-            <groupId>org.junit.vintage</groupId>
-            <artifactId>junit-vintage-engine</artifactId>
-            <version>4.12.1</version>
-          </dependency>
+           <dependency>
+             <groupId>org.junit.jupiter</groupId>
+             <artifactId>junit-jupiter-engine</artifactId>
+             <version>${junit5.version}</version>
+           </dependency>
+           <dependency>
+             <groupId>org.junit.vintage</groupId>
+             <artifactId>junit-vintage-engine</artifactId>
+             <version>${junit5.version}</version>
+           </dependency>
         </dependencies>
       </plugin>
     </plugins>

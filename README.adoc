@@ -9,55 +9,30 @@ If you want to start with your first *Hello World* you have to add the following
 
 ```xml
  <properties>
-    <meecrowave.version>1.2.1</meecrowave.version>
-    <tomcat-servlet-api.version>9.0.5</tomcat-servlet-api.version>
+    <meecrowave.version>1.2.3</meecrowave.version>
   </properties>
 
   <dependencies>
     <dependency>
-      <groupId>org.apache.geronimo.specs</groupId>
-      <artifactId>geronimo-atinject_1.0_spec</artifactId>
-      <version>1.0</version>
-      <scope>provided</scope>
+      <groupId>org.apache.meecrowave</groupId>
+      <artifactId>meecrowave-specs-api</artifactId>
+      <version>${meecrowave.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.meecrowave</groupId>
+      <artifactId>meecrowave-core</artifactId>
+      <version>${meecrowave.version}</version>
     </dependency>
 
     <dependency>
-      <groupId>org.apache.geronimo.specs</groupId>
-      <artifactId>geronimo-jcdi_2.0_spec</artifactId>
-      <version>1.0</version>
-      <scope>provided</scope>
-    </dependency>
-
-    <dependency>
-      <groupId>org.apache.geronimo.specs</groupId>
-      <artifactId>geronimo-jaxrs_2.0_spec</artifactId>
-      <version>1.0-alpha-1</version>
-      <scope>provided</scope>
-    </dependency>
-
-    <dependency>
-      <groupId>org.apache.geronimo.specs</groupId>
-      <artifactId>geronimo-json_1.1_spec</artifactId>
-      <version>1.0</version>
-      <scope>provided</scope>
-    </dependency>
-
-    <dependency>
-      <groupId>org.apache.logging.log4j</groupId>
-      <artifactId>log4j-api</artifactId>
-      <version>2.9.1</version>
-      <scope>provided</scope>
-    </dependency>
-
-    <dependency>
-      <groupId>org.apache.tomcat</groupId>
-      <artifactId>tomcat-servlet-api</artifactId>
-      <version>${tomcat-servlet-api.version}</version>
+      <groupId>org.apache.meecrowave</groupId>
+      <artifactId>meecrowave-junit</artifactId>
+      <version>${meecrowave.version}</version>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 ```
 
-This is not very convenient, means that an aggregating jar will be created soon to minimize thee amount of dependencies you have to declare.
 The project itself should be used with Java8 as the minimum JDK-version.
 
 To work with the latest SNAPSHOT, you can clone the repo and make a ```mvn clean install```.

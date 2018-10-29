@@ -19,6 +19,7 @@
 package org.apache.meecrowave;
 
 import static java.util.Collections.emptyList;
+import static java.util.Collections.emptyMap;
 import static java.util.Collections.emptySet;
 import static java.util.Comparator.comparing;
 import static java.util.Locale.ROOT;
@@ -55,7 +56,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Properties;
 import java.util.ServiceLoader;
 import java.util.Set;
@@ -99,8 +99,6 @@ import org.apache.catalina.session.StandardManager;
 import org.apache.catalina.startup.Catalina;
 import org.apache.catalina.startup.MeecrowaveContextConfig;
 import org.apache.catalina.startup.Tomcat;
-import org.apache.commons.text.StrLookup;
-import org.apache.commons.text.StrSubstitutor;
 import org.apache.coyote.http2.Http2Protocol;
 import org.apache.cxf.BusFactory;
 import org.apache.johnzon.core.BufferStrategy;
@@ -109,6 +107,7 @@ import org.apache.meecrowave.api.StopListening;
 import org.apache.meecrowave.cxf.ConfigurableBus;
 import org.apache.meecrowave.cxf.CxfCdiAutoSetup;
 import org.apache.meecrowave.io.IO;
+import org.apache.meecrowave.lang.Substitutor;
 import org.apache.meecrowave.logging.jul.Log4j2Logger;
 import org.apache.meecrowave.logging.log4j2.Log4j2Shutdown;
 import org.apache.meecrowave.logging.openwebbeans.Log4j2LoggerFactory;
@@ -142,6 +141,7 @@ public class Meecrowave implements AutoCloseable {
     protected ConfigurableBus clientBus;
     protected File base;
     protected final File ownedTempDir;
+    protected File workDir;
     protected InternalTomcat tomcat;
     protected volatile Thread hook;
 
@@ -149,6 +149,7 @@ public class Meecrowave implements AutoCloseable {
     private final Map<String, Runnable> contexts = new HashMap<>();
     private Runnable postTask;
     private boolean clearCatalinaSystemProperties;
+    private boolean deleteBase;
 
     public Meecrowave() {
         this(new Builder());
@@ -463,18 +464,29 @@ public class Meecrowave implements AutoCloseable {
         { // setup
             base = new File(newBaseDir());
 
-            final File conf = createDirectory(base, "conf");
-            createDirectory(base, "lib");
-            createDirectory(base, "logs");
-            createDirectory(base, "temp");
-            createDirectory(base, "work");
-            createDirectory(base, "webapps");
+            // create the temp dir folder.
+            File tempDir;
+            if (configuration.getTempDir() == null || configuration.getTempDir().length() == 0) {
+                tempDir = createDirectory(base, "temp");
+            } else {
+                tempDir = new File(configuration.getTempDir());
+                if (!tempDir.exists()) {
+                    tempDir.mkdirs();
+                }
+            }
 
-            synchronize(conf, configuration.conf);
+            try {
+                workDir = createDirectory(base, "work");
+            } catch (final IllegalStateException ise) {
+                // in case we could not create that directory we create it in the temp dir folder
+                workDir = createDirectory(tempDir, "work");
+            }
+
+            synchronize(new File(base, "conf"), configuration.conf);
         }
 
         final Properties props = configuration.properties;
-        StrSubstitutor substitutor = null;
+        Substitutor substitutor = null;
         for (final String s : props.stringPropertyNames()) {
             final String v = props.getProperty(s);
             if (v != null && v.contains("${")) {
@@ -483,14 +495,13 @@ public class Meecrowave implements AutoCloseable {
                     placeHolders.put("meecrowave.embedded.http", Integer.toString(configuration.httpPort));
                     placeHolders.put("meecrowave.embedded.https", Integer.toString(configuration.httpsPort));
                     placeHolders.put("meecrowave.embedded.stop", Integer.toString(configuration.stopPort));
-                    substitutor = new StrSubstitutor(placeHolders);
+                    substitutor = new Substitutor(placeHolders);
                 }
                 props.put(s, substitutor.replace(v));
             }
         }
 
         final File conf = new File(base, "conf");
-        final File webapps = new File(base, "webapps");
 
         tomcat.setBaseDir(base.getAbsolutePath());
         tomcat.setHostname(configuration.host);
@@ -565,12 +576,20 @@ public class Meecrowave implements AutoCloseable {
             tomcat.getEngine().setDefaultHost(configuration.host);
             final StandardHost host = new StandardHost();
             host.setName(configuration.host);
-            host.setAppBase(webapps.getAbsolutePath());
+
+            try {
+                final File webapps = createDirectory(base, "webapps");
+                host.setAppBase(webapps.getAbsolutePath());
+            } catch (final IllegalStateException ise) {
+                // never an issue since the webapps are deployed being put in webapps - so no dynamic folder
+                // or through their path - so don't need webapps folder
+            }
+
             host.setUnpackWARs(true); // forced for now cause OWB doesn't support war:file:// urls
             try {
-                host.setWorkDir(new File(base, "work").getCanonicalPath());
+                host.setWorkDir(workDir.getCanonicalPath());
             } catch (final IOException e) {
-                host.setWorkDir(new File(base, "work").getAbsolutePath());
+                host.setWorkDir(workDir.getAbsolutePath());
             }
             tomcat.setHost(host);
         }
@@ -629,6 +648,9 @@ public class Meecrowave implements AutoCloseable {
                 httpsConnector.addUpgradeProtocol(new Http2Protocol());
             }
             final List<SSLHostConfig> buildSslHostConfig = buildSslHostConfig();
+            if (!buildSslHostConfig.isEmpty()) {
+                createDirectory(base, "conf");
+            }
             buildSslHostConfig.forEach(sslHostConf -> {
                 if (isCertificateFromClasspath(sslHostConf.getCertificateKeystoreFile())) {
                     copyCertificateToConfDir(sslHostConf.getCertificateKeystoreFile());
@@ -649,7 +671,7 @@ public class Meecrowave implements AutoCloseable {
                     sslHostConf.setCertificateChainFile(base.getAbsolutePath() + "/conf/" + sslHostConf.getCertificateChainFile());
                 }
             });
-            
+
             buildSslHostConfig.forEach(httpsConnector::addSslHostConfig);
 
             if (configuration.defaultSSLHostConfigName != null) {
@@ -682,6 +704,11 @@ public class Meecrowave implements AutoCloseable {
         }
 
         StreamSupport.stream(ServiceLoader.load(Meecrowave.InstanceCustomizer.class).spliterator(), false)
+                .peek(i -> {
+                    if (MeecrowaveAwareInstanceCustomizer.class.isInstance(i)) {
+                        MeecrowaveAwareInstanceCustomizer.class.cast(i).setMeecrowave(this);
+                    }
+                })
                 .forEach(c -> c.accept(tomcat));
         configuration.instanceCustomizers.forEach(c -> c.accept(tomcat));
 
@@ -736,12 +763,12 @@ public class Meecrowave implements AutoCloseable {
     private boolean isCertificateFromClasspath(final String certificate) {
         final BiPredicate<String, String> equals = System.getProperty("os.name", "ignore").toLowerCase(ROOT).contains("win") ?
                 String::equalsIgnoreCase : String::equals;
-        return certificate != null && !(new File(certificate).exists()) 
+        return certificate != null && !(new File(certificate).exists())
                 && !equals.test(
                         Paths.get(System.getProperty("user.home")).resolve(".keystore").toAbsolutePath().normalize().toString(),
                         Paths.get(certificate).toAbsolutePath().normalize().toString());
     }
-    
+
     private void copyCertificateToConfDir(String certificate) {
         InputStream resourceAsStream = null;
         try {
@@ -962,7 +989,7 @@ public class Meecrowave implements AutoCloseable {
                 ofNullable(postTask).ifPresent(Runnable::run);
                 postTask = null;
                 try {
-                    if (base != null) {
+                    if (deleteBase && base != null) {
                         IO.delete(base);
                     }
 
@@ -1052,6 +1079,8 @@ public class Meecrowave implements AutoCloseable {
             for (final Map.Entry<String, URL> u : urls.entrySet()) {
                 try (final InputStream is = u.getValue().openStream()) {
                     final File to = new File(base, u.getKey());
+                    final File parentFile = to.getParentFile();
+                    createDirectory(parentFile.getParentFile(), parentFile.getName());
                     try (final OutputStream os = new FileOutputStream(to)) {
                         IO.copy(is, os);
                     }
@@ -1066,6 +1095,7 @@ public class Meecrowave implements AutoCloseable {
     }
 
     private String newBaseDir() {
+        deleteBase = false;
         String dir = configuration.dir;
         if (dir != null) {
             final File dirFile = new File(dir);
@@ -1084,6 +1114,7 @@ public class Meecrowave implements AutoCloseable {
             return new File(base).getAbsolutePath();
         }
 
+        deleteBase = true;
         final List<String> lookupPaths = new ArrayList<>();
         lookupPaths.add("target");
         lookupPaths.add("build");
@@ -1329,7 +1360,7 @@ public class Meecrowave implements AutoCloseable {
 
         @CliOption(name = "jaxws-support-if-present", description = "Should @WebService CDI beans be deployed if cxf-rt-frontend-jaxws is in the classpath.")
         private boolean jaxwsSupportIfAvailable = true;
-        
+
         @CliOption(name = "default-ssl-hostconfig-name", description = "The name of the default SSLHostConfig that will be used for secure https connections.")
         private String defaultSSLHostConfigName;
 
@@ -1941,7 +1972,7 @@ public class Meecrowave implements AutoCloseable {
             }
             return this;
         }
-        
+
         public Builder randomHttpsPort() {
             try (final ServerSocket serverSocket = new ServerSocket(0)) {
                 this.httpsPort = serverSocket.getLocalPort();
@@ -2092,13 +2123,13 @@ public class Meecrowave implements AutoCloseable {
 
         public void loadFromProperties(final Properties config) {
             // filtering properties with system properties or themself
-            final StrSubstitutor strSubstitutor = new StrSubstitutor(new StrLookup<String>() {
+            final Substitutor strSubstitutor = new Substitutor(emptyMap()) {
                 @Override
-                public String lookup(final String key) {
+                public String getOrDefault(final String key, final String or) {
                     final String property = System.getProperty(key);
-                    return property == null ? config.getProperty(key) : null;
+                    return property == null ? config.getProperty(key, or) : or;
                 }
-            });
+            };
 
             final ValueTransformers transformers = getExtension(ValueTransformers.class);
             for (final String key : config.stringPropertyNames()) {
@@ -2594,6 +2625,11 @@ public class Meecrowave implements AutoCloseable {
     }
 
     public interface InstanceCustomizer extends Consumer<Tomcat> {
+    }
+
+    // since it is too early to have CDI and lookup the instance we must set it manually
+    public interface MeecrowaveAwareInstanceCustomizer extends InstanceCustomizer {
+        void setMeecrowave(Meecrowave meecrowave);
     }
 
     private static final class MeecrowaveContainerLoader extends URLClassLoader {
